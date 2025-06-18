@@ -1,12 +1,12 @@
 <?php
+session_start();
 require 'connection.php';
 
 $error = '';
-$success = '';
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $firstName = trim($_POST['firstName']);
-    $lastName  = trim($_POST['lastName']);
+    $firstName = trim($_POST['first_name']);
+    $lastName  = trim($_POST['last_name']);
     $email     = trim($_POST['email']);
     $password  = password_hash($_POST['password'], PASSWORD_DEFAULT);
 
@@ -16,22 +16,36 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     } elseif (preg_match('/^[a-z]{1}[a-z]+@strathmore\.edu$/i', $email)) {
         $role = 'admin';
     } else {
-        $error = "Only strathmore.edu emails are allowed.";
+        $error = "Only @strathmore.edu emails are allowed.";
     }
 
-    if (!$error) {
+    if (empty($error)) {
         $stmt = $conn->prepare("INSERT INTO users (firstName, lastName, email, password, role) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("sssss", $firstName, $lastName, $email, $password, $role);
 
-        if ($stmt->execute()) {
-            $success = "Registration successful. You can now <a href='login.php'>login</a>.";
-        } else {
-            $error = "Registration failed: " . $stmt->error;
+        try {
+            $stmt->execute();
+
+            // Set session for immediate login
+            $_SESSION['userID'] = $stmt->insert_id;
+            $_SESSION['email']  = $email;
+            $_SESSION['role']   = $role;
+            $_SESSION['firstName'] = $firstName;
+
+            header("Location: index.php");
+            exit;
+        } catch (mysqli_sql_exception $e) {
+            if ($e->getCode() === 1062) {
+                $error = "An account already exists with that email.";
+            } else {
+                $error = "Registration failed: " . $e->getMessage();
+            }
         }
 
         $stmt->close();
-        $conn->close();
     }
+
+    $conn->close();
 }
 ?>
 
@@ -43,18 +57,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <body>
     <h2>Register</h2>
 
-    <?php if ($error): ?>
+    <?php if (!empty($error)): ?>
         <p style="color: red;"><?php echo htmlspecialchars($error); ?></p>
-    <?php elseif ($success): ?>
-        <p style="color: green;"><?php echo $success; ?></p>
     <?php endif; ?>
 
     <form method="POST" action="register.php">
         <label>First Name:</label><br>
-        <input type="text" name="firstName" required><br><br>
+        <input type="text" name="first_name" required><br><br>
 
         <label>Last Name:</label><br>
-        <input type="text" name="lastName" required><br><br>
+        <input type="text" name="last_name" required><br><br>
 
         <label>Email (must be @strathmore.edu):</label><br>
         <input type="email" name="email" required><br><br>
