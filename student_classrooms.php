@@ -7,24 +7,41 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'student') {
     exit;
 }
 
+// Set timezone
 $now = new DateTime('now', new DateTimeZone('Africa/Nairobi'));
 $currentTime = $now->format('H:i:s');
 $currentDay  = $now->format('l');
 
-$searchDay = $_GET['day'] ?? $currentDay;
-$searchTime = $_GET['time'] ?? $currentTime;
+// Handle search input or use current time
+$searchDay  = $_GET['day'] ?? $currentDay;
+$searchFrom = $_GET['from'] ?? $currentTime;
+$searchTo   = $_GET['to'] ?? null;
 
+// Get all classrooms
 $allRooms = [];
 $result = $conn->query("SELECT roomName, capacity, building FROM classrooms");
 while ($row = $result->fetch_assoc()) {
     $allRooms[trim($row['roomName'])] = $row;
 }
 
-$stmt = $conn->prepare("SELECT DISTINCT classroom FROM schedules 
-                        WHERE dayOfWeek = ? 
-                        AND TIME(?) >= TIME(startTime) 
-                        AND TIME(?) < TIME(endTime)");
-$stmt->bind_param("sss", $searchDay, $searchTime, $searchTime);
+// Get occupied rooms
+if ($searchTo) {
+    $stmt = $conn->prepare("SELECT DISTINCT classroom FROM schedules 
+                            WHERE dayOfWeek = ? 
+                            AND (
+                                (TIME(startTime) <= TIME(?) AND TIME(endTime) > TIME(?)) OR
+                                (TIME(startTime) < TIME(?) AND TIME(endTime) >= TIME(?)) OR
+                                (TIME(startTime) >= TIME(?) AND TIME(endTime) <= TIME(?))
+                            )");
+    $stmt->bind_param("sssssss", $searchDay, $searchFrom, $searchFrom, $searchTo, $searchTo, $searchFrom, $searchTo);
+} else {
+    $stmt = $conn->prepare("SELECT DISTINCT classroom FROM schedules 
+                            WHERE dayOfWeek = ? 
+                            AND TIME(?) >= TIME(startTime) 
+                            AND TIME(?) < TIME(endTime)");
+    $stmt->bind_param("sss", $searchDay, $searchFrom, $searchFrom);
+}
+
 $stmt->execute();
 $res = $stmt->get_result();
 
@@ -33,6 +50,7 @@ while ($row = $res->fetch_assoc()) {
     $occupied[] = trim(preg_replace('/\s+/', '', $row['classroom']));
 }
 
+// Filter available rooms
 $availableRooms = [];
 foreach ($allRooms as $roomName => $details) {
     $normalized = str_replace(' ', '', $roomName);
@@ -61,13 +79,38 @@ foreach ($allRooms as $roomName => $details) {
             ?>
         </select>
 
-        <label>Time (HH:MM):</label>
-        <input type="time" name="time" value="<?= htmlspecialchars(substr($searchTime, 0, 5)) ?>" required>
+        <label>Start Time:</label>
+        <select name="from" required>
+            <?php
+            for ($hour = 8; $hour <= 17; $hour++) {
+                $formatted = str_pad($hour, 2, '0', STR_PAD_LEFT) . ':15';
+                $selected = (substr($searchFrom, 0, 5) === $formatted) ? 'selected' : '';
+                echo "<option value=\"$formatted\" $selected>$formatted</option>";
+            }
+            ?>
+        </select>
+
+        <label>End Time (optional):</label>
+        <select name="to">
+            <option value="">--</option>
+            <?php
+            for ($hour = 8; $hour <= 17; $hour++) {
+                $formatted = str_pad($hour, 2, '0', STR_PAD_LEFT) . ':15';
+                $selected = ($searchTo && substr($searchTo, 0, 5) === $formatted) ? 'selected' : '';
+                echo "<option value=\"$formatted\" $selected>$formatted</option>";
+            }
+            ?>
+        </select>
 
         <button type="submit">Check Availability</button>
     </form>
 
-    <h4>Showing available classrooms on <strong><?= htmlspecialchars($searchDay) ?></strong> at <strong><?= htmlspecialchars(substr($searchTime, 0, 5)) ?></strong></h4>
+    <h4>Showing available classrooms on <strong><?= htmlspecialchars($searchDay) ?></strong> at 
+        <strong><?= htmlspecialchars(substr($searchFrom, 0, 5)) ?></strong>
+        <?php if ($searchTo): ?>
+            to <strong><?= htmlspecialchars(substr($searchTo, 0, 5)) ?></strong>
+        <?php endif; ?>
+    </h4>
 
     <?php if (empty($availableRooms)): ?>
         <p>No classrooms available at this time.</p>
@@ -87,5 +130,7 @@ foreach ($allRooms as $roomName => $details) {
             <?php endforeach; ?>
         </table>
     <?php endif; ?>
+
+    <p><a href="logout.php">Logout</a></p>
 </body>
 </html>
