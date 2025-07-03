@@ -1,71 +1,68 @@
 <?php
 session_start();
+require 'connection.php';
 
-// Database connection
-$host = 'localhost';
-$db   = 'empty_classroom_finder';
-$user = 'root';
-$pass = '';
-$charset = 'utf8mb4';
-
-$dsn = "mysql:host=$host;dbname=$db;charset=$charset";
-$options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-];
-
-try {
-    $pdo = new PDO($dsn, $user, $pass, $options);
-} catch (\PDOException $e) {
-    die("Connection failed: " . $e->getMessage());
-}
-
-// Handle login form submission
 $error = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email    = trim($_POST['email']);
+    $email = trim($_POST['email']);
     $password = $_POST['password'];
 
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
-    $stmt->execute([$email]);
-    $user = $stmt->fetch();
+    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
 
-    if ($user) {
-        if (password_verify($password, $user['password'])) {
-            $_SESSION['userID']     = $user['userID'];
-            $_SESSION['role']       = $user['role'];
-            $_SESSION['email']      = $user['email'];
-            $_SESSION['firstName']  = $user['firstName']; 
+    if ($stmt->execute()) {
+        $result = $stmt->get_result();
+        if ($result && $result->num_rows === 1) {
+            $user = $result->fetch_assoc();
+            if (password_verify($password, $user['password'])) {
+                $_SESSION['email'] = $user['email'];
+                $_SESSION['role'] = $user['role'];
+                $_SESSION['firstName'] = $user['firstName'];
 
-            header('Location: index.php');
-            exit;
+                if ($user['role'] === 'student') {
+                    header("Location: student_classrooms.php");
+                } elseif ($user['role'] === 'admin') {
+                    header("Location: admin_dashboard.php");
+                } elseif ($user['role'] === 'system_admin') {
+                    header("Location: system_admin_dashboard.php");
+                } else {
+                    $error = "Unrecognized user role.";
+                }
+                exit;
+            } else {
+                $error = "Incorrect password.";
+            }
         } else {
-            $error = "Incorrect password.";
+            $error = "No account found with that email.";
         }
     } else {
-        $error = "No user found with that email.";
+        $error = "Login failed: " . $stmt->error;
     }
+
+    $stmt->close();
+    $conn->close();
 }
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Login - Empty Classroom Finder</title>
+    <title>Login</title>
 </head>
 <body>
     <h2>Login</h2>
 
-    <?php if ($error): ?>
-        <p style="color:red"><?php echo htmlspecialchars($error); ?></p>
+    <?php if (!empty($error)) : ?>
+        <p style="color: red;"><?php echo htmlspecialchars($error); ?></p>
     <?php endif; ?>
 
     <form method="POST" action="login.php">
-        <label for="email">Email:</label><br>
-        <input type="email" name="email" id="email" required><br><br>
+        <label>Email:</label><br>
+        <input type="email" name="email" required><br><br>
 
-        <label for="password">Password:</label><br>
-        <input type="password" name="password" id="password" required><br><br>
+        <label>Password:</label><br>
+        <input type="password" name="password" required><br><br>
 
         <button type="submit">Login</button>
     </form>

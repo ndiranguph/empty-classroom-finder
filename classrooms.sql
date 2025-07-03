@@ -1,0 +1,7 @@
+CREATE TABLE classrooms (
+    roomID INT AUTO_INCREMENT PRIMARY KEY,
+    roomName VARCHAR(50) NOT NULL,
+    capacity INT NOT NULL,
+    building VARCHAR(100),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

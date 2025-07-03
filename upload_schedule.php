@@ -3,54 +3,114 @@ session_start();
 require 'connection.php';
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: login.php");
+    header('Location: login.php');
     exit;
 }
 
-function normalizeTime($timeStr) {
-    $ts = strtotime($timeStr);
-    return date('H:i:s', $ts); // Enforce 24-hour format
-}
+$adminEmail = $_SESSION['email'];
+$message = '';
 
+// Handle file upload
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csvFile'])) {
-    $file = $_FILES['csvFile']['tmp_name'];
-    $handle = fopen($file, 'r');
+    $file = $_FILES['csvFile'];
 
-    // Skip header
-    fgetcsv($handle);
+    if ($file['error'] === 0 && pathinfo($file['name'], PATHINFO_EXTENSION) === 'csv') {
+        $fileTmpPath = $file['tmp_name'];
+        $handle = fopen($fileTmpPath, 'r');
 
-    $stmt = $conn->prepare("INSERT INTO schedules (classroom, dayOfWeek, startTime, endTime, courseCode, lecturer) VALUES (?, ?, ?, ?, ?, ?)");
+        if ($handle !== false) {
+            // Clear existing schedules
+            $conn->query("DELETE FROM schedules");
 
-    while (($data = fgetcsv($handle, 1000, ",")) !== false) {
-        $classroom = trim(preg_replace('/\s+/', ' ', $data[0]));
-        $day = trim($data[1]);
-        $start = normalizeTime($data[2]);
-        $end = normalizeTime($data[3]);
-        $course = trim($data[4]);
-        $lecturer = trim($data[5]);
+            // Skip header
+            fgetcsv($handle);
 
-        $stmt->bind_param("ssssss", $classroom, $day, $start, $end, $course, $lecturer);
-        $stmt->execute();
+            $stmt = $conn->prepare("INSERT INTO schedules (classroom, dayOfWeek, startTime, endTime, courseCode, lecturer, createdAt) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+
+            while (($data = fgetcsv($handle, 1000, ',')) !== false) {
+                $classroom = trim(str_replace(' ', '', $data[0]));
+                $day       = trim($data[1]);
+                $start     = trim($data[2]);
+                $end       = trim($data[3]);
+                $code      = trim($data[4]);
+                $lecturer  = trim($data[5]);
+
+                $stmt->bind_param("ssssss", $classroom, $day, $start, $end, $code, $lecturer);
+                $stmt->execute();
+            }
+
+            fclose($handle);
+
+            // Save info about the uploaded file
+            $filename = $file['name'];
+            $insertLog = $conn->prepare("INSERT INTO uploaded_schedules (filename, uploaded_by, uploaded_at) VALUES (?, ?, NOW())");
+            $insertLog->bind_param("ss", $filename, $adminEmail);
+            $insertLog->execute();
+
+            $message = "Schedule uploaded successfully.";
+        } else {
+            $message = "Failed to read the uploaded file.";
+        }
+    } else {
+        $message = "Invalid file. Please upload a CSV file.";
     }
-
-    $stmt->close();
-    fclose($handle);
-
-    echo "<p>CSV uploaded successfully.</p>";
-    echo "<p><a href='index.php'>Go back to Dashboard</a></p>";
 }
+
+// Handle deletion
+if (isset($_GET['delete_id'])) {
+    $deleteId = intval($_GET['delete_id']);
+
+    // Delete from log
+    $conn->query("DELETE FROM uploaded_schedules WHERE id = $deleteId");
+
+    // Also clear the actual schedules (if desired; optional logic)
+    $conn->query("DELETE FROM schedules");
+
+    header("Location: upload_schedules.php");
+    exit;
+}
+
+// Fetch uploaded schedules
+$schedules = $conn->query("SELECT * FROM uploaded_schedules ORDER BY uploaded_at DESC");
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Upload Schedule</title>
+    <title>Upload Class Schedule</title>
 </head>
 <body>
     <h2>Upload Class Schedule (CSV)</h2>
+
+    <?php if ($message): ?>
+        <p style="color: green;"><?= htmlspecialchars($message) ?></p>
+    <?php endif; ?>
+
     <form method="POST" enctype="multipart/form-data">
         <input type="file" name="csvFile" accept=".csv" required>
         <button type="submit">Upload</button>
     </form>
+
+    <br>
+    <a href="index.php">Back to Dashboard</a>
+    <br><br>
+
+    <h3>Uploaded Schedules</h3>
+    <table border="1" cellpadding="6">
+        <tr>
+            <th>Filename</th>
+            <th>Uploaded By</th>
+            <th>Uploaded At</th>
+            <th>Action</th>
+        </tr>
+        <?php while ($row = $schedules->fetch_assoc()): ?>
+            <tr>
+                <td><?= htmlspecialchars($row['filename']) ?></td>
+                <td><?= htmlspecialchars($row['uploaded_by']) ?></td>
+                <td><?= htmlspecialchars($row['uploaded_at']) ?></td>
+                <td><a href="?delete_id=<?= $row['id'] ?>" onclick="return confirm('Are you sure you want to delete this schedule?')">Delete</a></td>
+            </tr>
+        <?php endwhile; ?>
+    </table>
 </body>
 </html>
