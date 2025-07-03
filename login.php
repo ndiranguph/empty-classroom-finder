@@ -2,7 +2,10 @@
 session_start();
 require 'connection.php';
 
-$error = '';
+$email = '';
+if (isset($_COOKIE['remember_me'])) {
+    $email = $_COOKIE['remember_me'];
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email']);
@@ -10,59 +13,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
     $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $res = $stmt->get_result();
 
-    if ($stmt->execute()) {
-        $result = $stmt->get_result();
-        if ($result && $result->num_rows === 1) {
-            $user = $result->fetch_assoc();
-            if (password_verify($password, $user['password'])) {
-                $_SESSION['email'] = $user['email'];
-                $_SESSION['role'] = $user['role'];
-                $_SESSION['firstName'] = $user['firstName'];
+    if ($res->num_rows === 1) {
+        $user = $res->fetch_assoc();
+        if (password_verify($password, $user['password'])) {
+            $_SESSION['email'] = $user['email'];
+            $_SESSION['role'] = $user['role'];
+            $_SESSION['firstName'] = $user['firstName'];
 
-                if ($user['role'] === 'student') {
-                    header("Location: student_classrooms.php");
-                } elseif ($user['role'] === 'admin') {
-                    header("Location: admin_dashboard.php");
-                } elseif ($user['role'] === 'system_admin') {
-                    header("Location: system_admin_dashboard.php");
-                } else {
-                    $error = "Unrecognized user role.";
-                }
-                exit;
+            if (isset($_POST['remember'])) {
+                setcookie("remember_me", $user['email'], time() + (86400 * 30), "/"); // 30 days
             } else {
-                $error = "Incorrect password.";
+                setcookie("remember_me", "", time() - 3600, "/"); // clear if not checked
             }
-        } else {
-            $error = "No account found with that email.";
+
+            if ($user['role'] === 'student') {
+                header('Location: student_classrooms.php');
+            } elseif ($user['role'] === 'admin') {
+                header('Location: admin_dashboard.php');
+            } elseif ($user['role'] === 'system_admin') {
+                header('Location: system_admin_dashboard.php');
+            }
+            exit;
         }
-    } else {
-        $error = "Login failed: " . $stmt->error;
     }
 
-    $stmt->close();
-    $conn->close();
+    $error = "Invalid email or password.";
 }
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Login</title>
+    <title>Login - Empty Classroom Finder</title>
 </head>
 <body>
     <h2>Login</h2>
 
-    <?php if (!empty($error)) : ?>
-        <p style="color: red;"><?php echo htmlspecialchars($error); ?></p>
-    <?php endif; ?>
+    <?php if (isset($error)) echo "<p style='color:red;'>$error</p>"; ?>
 
-    <form method="POST" action="login.php">
+    <form method="POST" action="login.php" autocomplete="off">
         <label>Email:</label><br>
-        <input type="email" name="email" required><br><br>
+        <input type="email" name="email" required value="<?= htmlspecialchars($email) ?>" autocomplete="email"><br><br>
 
         <label>Password:</label><br>
-        <input type="password" name="password" required><br><br>
+        <input type="password" name="password" required autocomplete="new-password"><br><br>
+
+        <label><input type="checkbox" name="remember" <?= isset($_COOKIE['remember_me']) ? 'checked' : '' ?>> Remember Me</label><br><br>
 
         <button type="submit">Login</button>
     </form>
