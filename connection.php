@@ -1,8 +1,8 @@
 <?php
 $host = 'localhost';
 $db   = 'empty_classroom_finder';  // Database name
-$user = 'root';                    // MySQL username (default for XAMPP)
-$pass = '';                        // MySQL password (default is empty in XAMPP)
+$user = 'root';                    // MySQL username 
+$pass = '';                        // MySQL password 
 
 // Create connection
 $conn = new mysqli($host, $user, $pass, $db);
