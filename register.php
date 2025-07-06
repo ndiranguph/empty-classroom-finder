@@ -51,12 +51,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $mail->isSMTP();
                     $mail->Host       = 'smtp.gmail.com';
                     $mail->SMTPAuth   = true;
-                    $mail->Username   = 'philipgko@gmail.com';        // Your Gmail address
-                    $mail->Password   = 'epri nqkn awfz gbvi';         // Your App Password
+                    $mail->Username   = '@gmail.com';        // Your Gmail address
+                    $mail->Password   = '';         // Your App Password
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
                     $mail->Port       = 465;
 
-                    $mail->setFrom('philipgko@gmail.com', 'Empty Classroom Finder');
+                    $mail->setFrom('@gmail.com', 'Empty Classroom Finder');
                     $mail->addAddress($email); // Recipient = user
                     $mail->isHTML(true);
                     $mail->Subject = 'Your Verification Code';
